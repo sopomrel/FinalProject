@@ -1,0 +1,18 @@
+# Red stop line (BGR camera). Tune on sim / real mat.
+red_lower_h_1: 0
+red_lower_s_1: 80
+red_lower_v_1: 80
+red_upper_h_1: 10
+red_upper_s_1: 255
+red_upper_v_1: 255
+red_lower_h_2: 160
+red_lower_s_2: 80
+red_lower_v_2: 80
+red_upper_h_2: 179
+red_upper_s_2: 255
+red_upper_v_2: 255
+roi_y_start: 0.45
+roi_x_margin: 0.15
+min_red_ratio: 0.012
+confirm_frames: 3
+release_frames: 2
