@@ -27,7 +27,12 @@ class ObstacleHandler:
         self.stopped = False
         self.reason = ""
 
-    def update(self, detections: Optional[List[Detection]], img_size: int) -> bool:
+    def update(
+        self,
+        detections: Optional[List[Detection]],
+        img_size: int,
+        img_w: Optional[int] = None,
+    ) -> bool:
         """Fold one frame of detections into the debounced stop decision.
 
         `detections` may be None when the detector skips a frame — in that case
@@ -36,6 +41,8 @@ class ObstacleHandler:
         if detections is None:
             return self.stopped
 
+        # should_stop only uses image height (img_size); img_w is accepted here
+        # for API symmetry with the FSM/agent but isn't needed downstream.
         stop_now, reason = should_stop(detections, img_size)
 
         if stop_now:
@@ -56,11 +63,11 @@ class ObstacleHandler:
         """Run `detector.detect` on an RGB frame and update the stop decision.
 
         `detector` is an ObjectDetectionAgent-like object exposing
-        `detect(frame_rgb) -> list[Detection] | None`. img_size is taken from
-        the frame height (frames are square-ish; should_stop treats it as a scale).
+        `detect(frame_rgb) -> list[Detection] | None`. Passes frame height
+        as `img_size` (see stop_activity.should_stop).
         """
         if frame_rgb is None:
             return self.stopped
         detections = detector.detect(frame_rgb)
-        img_size = int(frame_rgb.shape[0])
-        return self.update(detections, img_size)
+        img_h, img_w = frame_rgb.shape[:2]
+        return self.update(detections, img_h, img_w)

@@ -28,12 +28,14 @@ class RoadNetwork:
         tile_size_m: float,
         default_start: str,
         default_goal: str,
+        default_parking: Optional[str] = None,
     ):
         self.nodes = nodes
         self.adjacency = adjacency
         self.tile_size_m = tile_size_m
         self.default_start = default_start
         self.default_goal = default_goal
+        self.default_parking = default_parking
 
     @classmethod
     def from_yaml(cls, path: Optional[Path] = None) -> "RoadNetwork":
@@ -59,12 +61,19 @@ class RoadNetwork:
             adjacency[a].append((b, dist))
             adjacency[b].append((a, dist))
 
+        default_parking = data.get("default_parking")
+        if default_parking is not None:
+            default_parking = str(default_parking)
+            if default_parking not in nodes:
+                raise ValueError(f"Unknown default_parking node: {default_parking}")
+
         return cls(
             nodes=nodes,
             adjacency=adjacency,
             tile_size_m=float(data["tile_size_m"]),
             default_start=str(data["default_start"]),
             default_goal=str(data["default_goal"]),
+            default_parking=default_parking,
         )
 
     def get_node(self, node_id: str) -> IntersectionNode:

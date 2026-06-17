@@ -6,7 +6,7 @@ from tasks.project.packages.graph_model import RoadNetwork
 from tasks.project.packages.intersection_detection import StopLineDetector
 from tasks.project.packages.navigation_types import NavState, PathStep, TurnDir
 from tasks.project.packages.obstacle_handler import Detection, ObstacleHandler
-from tasks.project.packages.path_planner import plan_route
+from tasks.project.packages.path_planner import plan_mission, plan_route
 from tasks.project.packages.turning import TurnController
 
 
@@ -29,17 +29,44 @@ class NavigationFSM:
         self.step_index = 0
         self.current_step: Optional[PathStep] = None
         self._turn_pending = False
+        self._victory_at_index: Optional[int] = None
+        self._awaiting_victory = False
+        self._victory_done = False
+        self._ends_at_parking = False
 
-    def start(self, start: Optional[str] = None, goal: Optional[str] = None) -> NavState:
-        self.route = plan_route(self.network, start, goal)
+    def start(
+        self,
+        start: Optional[str] = None,
+        goal: Optional[str] = None,
+        return_to_start: bool = False,
+        parking: Optional[str] = None,
+    ) -> NavState:
+        outbound = plan_route(self.network, start, goal)
+        self.route = plan_mission(
+            self.network,
+            start=start,
+            goal=goal,
+            return_to_start=return_to_start,
+            parking=parking,
+        )
         self.step_index = 0
         self.stop_line.reset()
         self.obstacle.reset()
         self._turn_pending = False
+        self._awaiting_victory = False
+        self._victory_done = False
+        self._victory_at_index = len(outbound) - 1 if outbound else None
+        park_node = parking
+        self._ends_at_parking = bool(
+            park_node
+            and self.route
+            and self.route[-1].to_node == park_node
+        )
 
         if not self.route:
             self.current_step = None
             self.state = NavState.GOAL_REACHED
+            self._awaiting_victory = True
             return self.state
 
         self.current_step = self.route[0]
@@ -77,16 +104,33 @@ class NavigationFSM:
             self.mark_turn_done()
         return completed
 
+    def resume_after_victory(self) -> NavState:
+        """Continue inbound/parking legs after goal celebration."""
+        if self.state != NavState.GOAL_REACHED or not self._awaiting_victory:
+            return self.state
+
+        self._awaiting_victory = False
+        self._victory_done = True
+        if self.step_index >= len(self.route):
+            self.current_step = None
+            self.state = NavState.PARKING if self._ends_at_parking else NavState.VICTORY
+            return self.state
+
+        self.current_step = self.route[self.step_index]
+        self.state = NavState.FOLLOW_LANE
+        return self.state
+
     def update(
         self,
         frame_bgr: Optional[np.ndarray],
         detections: Optional[List[Detection]] = None,
         img_size: Optional[int] = None,
+        img_w: Optional[int] = None,
         obstacle_stop: Optional[bool] = None,
     ) -> NavState:
         if obstacle_stop is None:
             if img_size is not None:
-                obstacle_stop = self.obstacle.update(detections, img_size)
+                obstacle_stop = self.obstacle.update(detections, img_size, img_w)
             else:
                 obstacle_stop = self.obstacle.stopped
 
@@ -130,9 +174,25 @@ class NavigationFSM:
         self.step_index += 1
         self.stop_line.reset()
 
-        if self.step_index >= len(self.route):
+        if (
+            self._victory_at_index is not None
+            and self.step_index - 1 == self._victory_at_index
+            and self.step_index < len(self.route)
+        ):
             self.current_step = None
             self.state = NavState.GOAL_REACHED
+            self._awaiting_victory = True
+            return
+
+        if self.step_index >= len(self.route):
+            self.current_step = None
+            if not self._victory_done:
+                self.state = NavState.GOAL_REACHED
+                self._awaiting_victory = True
+            elif self._ends_at_parking:
+                self.state = NavState.PARKING
+            else:
+                self.state = NavState.VICTORY
             return
 
         self.current_step = self.route[self.step_index]

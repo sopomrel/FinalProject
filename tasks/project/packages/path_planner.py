@@ -88,3 +88,53 @@ def plan_route(
     s = start or network.default_start
     g = goal or network.default_goal
     return path_to_steps(network, dijkstra(network, s, g))
+
+
+def plan_return_route(
+    network: RoadNetwork,
+    from_node: Optional[str] = None,
+    to_node: Optional[str] = None,
+) -> List[PathStep]:
+    """Plan route from goal back to start (or explicit from/to nodes)."""
+    origin = from_node or network.default_goal
+    dest = to_node or network.default_start
+    if origin == dest:
+        return []
+    return plan_route(network, origin, dest)
+
+
+def plan_parking_route(
+    network: RoadNetwork,
+    from_node: Optional[str] = None,
+    parking: Optional[str] = None,
+) -> List[PathStep]:
+    """Plan a leg from the current node to a parking intersection."""
+    origin = from_node or network.default_goal
+    dest = parking or network.default_parking
+    if origin == dest:
+        return []
+    return plan_route(network, origin, dest)
+
+
+def plan_mission(
+    network: RoadNetwork,
+    start: Optional[str] = None,
+    goal: Optional[str] = None,
+    return_to_start: bool = False,
+    parking: Optional[str] = None,
+) -> List[PathStep]:
+    """Outbound route, optionally followed by return and/or parking legs."""
+    s = start or network.default_start
+    g = goal or network.default_goal
+    steps = plan_route(network, s, g)
+
+    end_node = g
+    if return_to_start and g != s:
+        inbound = plan_return_route(network, g, s)
+        steps.extend(inbound)
+        end_node = s
+
+    if parking and end_node != parking:
+        steps.extend(plan_parking_route(network, end_node, parking))
+
+    return steps
