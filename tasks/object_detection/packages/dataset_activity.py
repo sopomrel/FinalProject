@@ -48,4 +48,4 @@ def convert_labelme_json(json_path: str, img_w: int, img_h: int) -> List[str]:
             f"{cls_id} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}"
         )
 
-    return label
+    return labels

@@ -101,10 +101,10 @@ def manual_control_loop():
         time.sleep(0.05)
 
 
-def _should_stop(detections, img_w: int, img_h: int):
+def _should_stop(detections, img_size: int):
     if det_agent is None:
         return False, ''
-    return student_should_stop(detections, img_w, img_h)
+    return student_should_stop(detections, img_size)
 
 
 def visualize(frame_rgb):
@@ -115,11 +115,10 @@ def visualize(frame_rgb):
     if wheels is None:
         return bgr
 
-    # Push frame to detection queue
+    # Push full-resolution frame so detections stay in camera pixel coords.
     if det_agent is not None and det_agent.model_loaded:
-        small = cv2.resize(frame_rgb, (det_agent.img_size, det_agent.img_size))
         try:
-            _frame_queue.put_nowait(small)
+            _frame_queue.put_nowait(frame_rgb)
         except queue.Full:
             pass
 
@@ -133,8 +132,8 @@ def visualize(frame_rgb):
     elif lane_agent is not None:
         pwm_left, pwm_right = lane_agent.compute_commands(frame_rgb)
 
-        oh, ow = frame_rgb.shape[0], frame_rgb.shape[1]
-        should_raw, reason_raw = _should_stop(detections, ow, oh)
+        img_h = frame_rgb.shape[0]
+        should_raw, reason_raw = _should_stop(detections, img_h)
         if should_raw:
             _stop_streak += 1
         else:
@@ -149,12 +148,7 @@ def visualize(frame_rgb):
             wheels.set_wheels_speed(0.0, 0.0)
 
     if det_agent is not None and det_agent.model_loaded and detections:
-        oh, ow = bgr.shape[:2]
-        sx = ow / det_agent.img_size
-        sy = oh / det_agent.img_size
-        scaled = [((int(x1*sx), int(y1*sy), int(x2*sx), int(y2*sy)), s, c)
-                  for (x1, y1, x2, y2), s, c in detections]
-        draw_detections(bgr, scaled)
+        draw_detections(bgr, detections)
 
     return bgr
 

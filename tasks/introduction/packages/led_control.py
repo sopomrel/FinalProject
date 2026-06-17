@@ -1,70 +1,29 @@
-# from typing import Dict, List
-
-
-# def set_turning_leds(direction: str) -> Dict[int, List[float]]:
-#     """Return LED colors indicating turning direction.
-
-#     Duckiebot has 4 RGB LEDs with indices:
-#       - 0: front-left
-#       - 2: front-right
-#       - 3: back-left
-#       - 4: back-right
-#     """
-#     yellow = [1.0, 1.0, 0.0]
-#     off = [0.0, 0.0, 0.0]
-
-#     state: Dict[int, List[float]] = {
-#         0: off[:],
-#         2: off[:],
-#         3: off[:],
-#         4: off[:],
-#     }
-
-#     d = (direction or "").strip().lower()
-#     if d == "left":
-#         state[0] = yellow[:]
-#         state[4] = yellow[:]
-#     elif d == "right":
-#         state[2] = yellow[:]
-#         state[3] = yellow[:]
-#     # Unknown/straight directions: leave all LEDs off.
-
-#     return state
 import colorsys
-from typing import List, Dict
+from typing import List
 
 
-def _all_off() -> Dict[int, List[float]]:
-   
-    return {0: [0.0, 0.0, 0.0],
-            2: [0.0, 0.0, 0.0],
-            3: [0.0, 0.0, 0.0],
-            4: [0.0, 0.0, 0.0]}
+def set_turning_leds(direction: str) -> dict:
+    direction = str(direction).lower()
 
+    # 1. DEFAULT: Initialize all 5 LEDs to White
+    leds = {i: [1.0, 1.0, 1.0] for i in range(5)}
 
-def set_turning_leds(direction: str) -> Dict[int, List[float]]:
-   
-    direction = direction.lower().strip()
-
-    leds = _all_off()
-    yellow = [1.0, 1.0, 0.0]
-    red = [1.0, 0.0, 0.0]
-    white = [1.0, 1.0, 1.0]
-
+    # 2. LEFT: Set left-side LEDs (0 and 1) to yellow/orange
     if direction == "left":
-        leds[0] = yellow  
-        leds[4] = yellow  
+        leds[0] = [1.0, 0.5, 0.0]
+        leds[1] = [1.0, 0.5, 0.0]
+
+    # 3. RIGHT: Set right-side LEDs (3 and 4) to yellow/orange
     elif direction == "right":
-        leds[2] = yellow  
-        leds[3] = yellow  
-    elif direction == "forward":
-        leds[0] = white
-        leds[2] = white
-    elif direction == "stop":
-        leds[3] = red
-        leds[4] = red  
-    else:
-        leds = _all_off()
-    
+        leds[3] = [1.0, 0.5, 0.0]
+        leds[4] = [1.0, 0.5, 0.0]
+
+    # 4. BACKWARDS: Set all LEDs to Red
+    # We check for "down" (what the dashboard sends) and "backwards" just in case
+    elif direction in ["down", "backward", "backwards"]:
+        leds = {i: [1.0, 0.0, 0.0] for i in range(5)}
+
+    # If the direction is "none" or "up", it skips the if-statements
+    # and simply returns the default white LEDs we set at the very beginning.
 
     return leds

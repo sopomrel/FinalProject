@@ -11,7 +11,7 @@ def get_motor_left_matrix(shape: Tuple[int, int]) -> np.ndarray:
     # Coordinate system:
     # - y: 0 at top, 1 at bottom
     # - x: 0 at left, 1 at right
-    y = np.linspace(0.0, 1.0, h, dtype=np.float32).reshape(h, 1)
+    y = np.linspace(0.0,  1.0, h, dtype=np.float32).reshape(h, 1)
     x = np.linspace(0.0, 1.0, w, dtype=np.float32).reshape(1, w)
 
     # y - x gives:

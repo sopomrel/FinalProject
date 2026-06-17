@@ -17,42 +17,24 @@ _yellow_upper = np.array([_h.get('yellow_upper_h', 0),  _h.get('yellow_upper_s',
 _white_lower = np.array([_h.get('white_lower_h', 0),   _h.get('white_lower_s', 0), _h.get('white_lower_v', 0)])
 _white_upper = np.array([_h.get('white_upper_h', 0), _h.get('white_upper_s', 0), _h.get('white_upper_v', 0)])
 
+
 def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """BGR in → binary float masks (0/1) for left (yellow) and right (white) lane paint."""
-    h, w = image.shape[:2]
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    hsv = cv2.GaussianBlur(hsv, (5, 5), 0)
+    """
+    Detects yellow and white lane markings using HSV filtering.
+    """
+    # 1. Convert the BGR image to HSV color space
+    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    raw_yellow = cv2.inRange(hsv, _yellow_lower, _yellow_upper)
-    raw_white = cv2.inRange(hsv, _white_lower, _white_upper)
+    # 2. Create binary masks using the globally defined upper and lower bounds
+    # cv2.inRange returns an array of 0s and 255s
+    mask_yellow_255 = cv2.inRange(hsv_image, _yellow_lower, _yellow_upper)
+    mask_white_255 = cv2.inRange(hsv_image, _white_lower, _white_upper)
 
-    mid = w // 2
-    mask_left_half = np.zeros((h, w), dtype=np.uint8)
-    mask_left_half[:, :mid] = 255
-    mask_right_half = np.zeros((h, w), dtype=np.uint8)
-    mask_right_half[:, mid:] = 255
+    # 3. Normalize the masks to 0 and 1 so agent.py can safely multiply by 255 later
+    mask_left = (mask_yellow_255 > 0).astype(np.float32)
+    mask_right = (mask_white_255 > 0).astype(np.float32)
 
-    yellow = cv2.bitwise_and(raw_yellow, mask_left_half)
-    white = cv2.bitwise_and(raw_white, mask_right_half)
-
-    roi = np.zeros((h, w), dtype=np.uint8)
-    y0 = int(h * 0.2)
-    roi[y0:, :] = 255
-    yellow = cv2.bitwise_and(yellow, roi)
-    white = cv2.bitwise_and(white, roi)
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    yellow = cv2.morphologyEx(yellow, cv2.MORPH_OPEN, kernel)
-    white = cv2.morphologyEx(white, cv2.MORPH_OPEN, kernel)
-    yellow = cv2.morphologyEx(yellow, cv2.MORPH_CLOSE, kernel)
-    white = cv2.morphologyEx(white, cv2.MORPH_CLOSE, kernel)
-
-    left = (yellow > 0).astype(np.float32)
-    right = (white > 0).astype(np.float32)
-    return left, right
-
-
-
+    return mask_left, mask_right
 
 def set_hsv_bounds(yellow_lower, yellow_upper, white_lower, white_upper):
     global _yellow_lower, _yellow_upper, _white_lower, _white_upper

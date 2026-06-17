@@ -190,7 +190,7 @@ def launch_godot(godot_path=None, debug=False, camera_port=None, wheel_port_hint
         except Exception as e:
             print(f"⚠️  Import failed: {e}, continuing anyway...")
 
-    godot_scene = scene or GODOT_SCENES.get('braitenberg', 'res://scenes/braitenberg.tscn')
+    godot_scene = scene or GODOT_SCENES.get('braitenberg', 'res://scenes/maps/braitenberg.tscn')
 
     # On macOS, force OpenGL3 (ANGLE) — Metal throttles rendering for occluded windows
     if platform.system() == 'Darwin':

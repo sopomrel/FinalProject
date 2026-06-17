@@ -3,9 +3,9 @@ import cv2
 import numpy as np
 import yaml
 
-_HSV_FILE = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'config', 'braitenberg_hsv_config.yaml')
+HSV_FILE = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'config', 'braitenberg_hsv_config.yaml')
 try:
-    with open(_HSV_FILE) as _f:
+    with open(HSV_FILE) as _f:
         _h = yaml.safe_load(_f) or {}
 except FileNotFoundError:
     _h = {}

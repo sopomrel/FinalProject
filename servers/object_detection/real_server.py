@@ -97,8 +97,8 @@ def detection_loop():
                 _last_detections = result
 
 
-def _should_stop(detections, img_w: int, img_h: int):
-    return student_should_stop(detections, img_w, img_h)
+def _should_stop(detections, img_size: int):
+    return student_should_stop(detections, img_size)
 
 
 def visualize(frame_bgr):
@@ -111,8 +111,7 @@ def visualize(frame_bgr):
 
     if det_agent is not None and det_agent.model_loaded:
         try:
-            small = cv2.resize(frame_rgb, (det_agent.img_size, det_agent.img_size))
-            _frame_queue.put_nowait(small)
+            _frame_queue.put_nowait(frame_rgb)
         except queue.Full:
             pass
 
@@ -127,8 +126,8 @@ def visualize(frame_bgr):
     elif lane_agent is not None:
         pwm_left, pwm_right = lane_agent.compute_commands(frame_rgb)
 
-        oh, ow = frame_bgr.shape[0], frame_bgr.shape[1]
-        should_raw, reason_raw = _should_stop(detections, ow, oh)
+        img_h = frame_bgr.shape[0]
+        should_raw, reason_raw = _should_stop(detections, img_h)
         if should_raw:
             _stop_streak += 1
         else:
@@ -143,12 +142,7 @@ def visualize(frame_bgr):
             wheels.set_wheels_speed(0.0, 0.0)
 
     if det_agent is not None and det_agent.model_loaded and detections:
-        oh, ow = frame_bgr.shape[:2]
-        sx = ow / det_agent.img_size
-        sy = oh / det_agent.img_size
-        scaled = [((int(x1*sx), int(y1*sy), int(x2*sx), int(y2*sy)), s, c)
-                  for (x1, y1, x2, y2), s, c in detections]
-        draw_detections(frame_bgr, scaled)
+        draw_detections(frame_bgr, detections)
 
     return frame_bgr
 
