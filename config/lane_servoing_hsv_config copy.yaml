@@ -1,8 +1,8 @@
 lane_detection_mode: geometry
 use_gray_world_balance: true
 white_lower_h: 0
-white_lower_s: 29
-white_lower_v: 220
+white_lower_s: 0
+white_lower_v: 123
 white_relaxed_lower_h: 0
 white_relaxed_lower_s: 0
 white_relaxed_lower_v: 80
@@ -11,11 +11,11 @@ white_relaxed_upper_s: 78
 white_relaxed_upper_v: 255
 white_tophat_max_saturation: 88
 white_tophat_thresh: 12
-white_upper_h: 25
-white_upper_s: 71
+white_upper_h: 36
+white_upper_s: 66
 white_upper_v: 255
 white_use_clahe: true
-yellow_lower_h: 21
+yellow_lower_h: 7
 yellow_lower_s: 64
 yellow_lower_v: 173
 yellow_relaxed_lower_h: 5
@@ -24,7 +24,7 @@ yellow_relaxed_lower_v: 48
 yellow_relaxed_upper_h: 58
 yellow_relaxed_upper_s: 255
 yellow_relaxed_upper_v: 255
-yellow_upper_h: 32
+yellow_upper_h: 78
 yellow_upper_s: 255
 yellow_upper_v: 255
 yellow_use_relaxed: true

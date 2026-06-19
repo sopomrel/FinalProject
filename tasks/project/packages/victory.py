@@ -1,85 +1,62 @@
+"""Victory dance — forward creep, spin, flashing LEDs after mission complete."""
+
+from __future__ import annotations
+
 import time
-from typing import List, Optional
 
-from tasks.project.packages.navigation_types import TurnDir
-from tasks.project.packages.turning import TurnController
-
-# Full 360° victory spin + LED flash. Re-tune on the physical bot if needed.
-SPIN_SPEED = 0.35
-SPIN_DURATION_FULL = 4.0  # four 90° quarters ≈ one full rotation
-FLASH_HZ = 2.0
-_LOOP_DT = 0.05
-
-LED_INDICES = (0, 2, 3, 4)
-_FLASH_COLORS: List[List[float]] = [
-    [1.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0],
-    [0.0, 0.0, 1.0],
-    [1.0, 1.0, 0.0],
-]
+from tasks.project.packages.led_control import show_victory_leds
+from tasks.project.packages.nav_constants import (
+    Phase,
+    VICTORY_FORWARD_SPEED,
+    VICTORY_SPIN_SPEED,
+)
+from tasks.project.packages.navigation_config import DEFAULT_NAV_CONFIG
 
 
-class VictoryCelebration:
-    """Goal celebration: spin in place while flashing corner LEDs."""
+class VictoryMixin:
+    """Celebration sequence at the goal intersection."""
 
-    def __init__(
-        self,
-        spin_speed: float = SPIN_SPEED,
-        spin_duration: float = SPIN_DURATION_FULL,
-        flash_hz: float = FLASH_HZ,
-        loop_dt: float = _LOOP_DT,
-        turner: Optional[TurnController] = None,
-    ):
-        self.spin_duration = float(spin_duration)
-        self.flash_hz = float(flash_hz)
-        self.loop_dt = float(loop_dt)
-        self.turner = turner or TurnController(
-            speed=spin_speed,
-            duration_90=spin_duration / 4.0,
-            loop_dt=loop_dt,
-        )
+    _nav_cfg: dict
+    _phase: Phase
+    _victory_start: float
+    last_pwm: tuple
 
-    def _flash_leds(self, leds, phase_on: bool) -> None:
-        if not leds:
+    def _victory_forward_s(self) -> float:
+        return float(self._nav_cfg.get(
+            'victory_forward_s', DEFAULT_NAV_CONFIG['victory_forward_s'],
+        ))
+
+    def _victory_spin_s(self) -> float:
+        return float(self._nav_cfg.get(
+            'victory_spin_s', DEFAULT_NAV_CONFIG['victory_spin_s'],
+        ))
+
+    def _begin_victory(self) -> None:
+        fwd = self._victory_forward_s()
+        spin = self._victory_spin_s()
+        if fwd <= 0.0 and spin <= 0.0:
+            self._phase = Phase.DONE
             return
-        if phase_on:
-            for i, idx in enumerate(LED_INDICES):
-                leds.set_rgb(idx, _FLASH_COLORS[i % len(_FLASH_COLORS)])
+        self._victory_start = time.monotonic()
+        self._phase = Phase.VICTORY
+        print(f"[Nav] Victory dance — forward {fwd:.1f}s, spin {spin:.1f}s")
+
+    def _tick_victory(self, now: float, wheels, leds) -> None:
+        elapsed = now - self._victory_start
+        fwd = self._victory_forward_s()
+        spin = self._victory_spin_s()
+
+        if elapsed < fwd:
+            wheels.set_wheels_speed(VICTORY_FORWARD_SPEED, VICTORY_FORWARD_SPEED)
+            self.last_pwm = (VICTORY_FORWARD_SPEED, VICTORY_FORWARD_SPEED)
+        elif elapsed < fwd + spin:
+            wheels.set_wheels_speed(-VICTORY_SPIN_SPEED, VICTORY_SPIN_SPEED)
+            self.last_pwm = (-VICTORY_SPIN_SPEED, VICTORY_SPIN_SPEED)
         else:
-            leds.all_off()
+            wheels.set_wheels_speed(0.0, 0.0)
+            self.last_pwm = (0.0, 0.0)
+            self._phase = Phase.DONE
+            print("[Nav] Victory dance complete")
+            return
 
-    def execute(self, wheels, leds=None, stop_event=None) -> bool:
-        """Spin ~360° with flashing LEDs. Returns False if interrupted."""
-        left, right = self.turner.wheel_speeds(TurnDir.LEFT)
-        wheels.set_wheels_speed(left, right)
-
-        deadline = time.time() + self.spin_duration
-        flash_period = 1.0 / max(self.flash_hz, 0.1)
-        next_flash = time.time()
-        lights_on = True
-
-        while time.time() < deadline:
-            if stop_event is not None:
-                if stop_event.wait(self.loop_dt):
-                    wheels.set_wheels_speed(0.0, 0.0)
-                    if leds:
-                        leds.all_off()
-                    return False
-            else:
-                time.sleep(self.loop_dt)
-
-            now = time.time()
-            if now >= next_flash:
-                self._flash_leds(leds, lights_on)
-                lights_on = not lights_on
-                next_flash = now + flash_period / 2.0
-
-        wheels.set_wheels_speed(0.0, 0.0)
-        if leds:
-            leds.all_on()
-        return True
-
-
-def celebrate(wheels, leds=None, stop_event=None, celebration: Optional[VictoryCelebration] = None) -> bool:
-    """Convenience wrapper for a default victory celebration."""
-    return (celebration or VictoryCelebration()).execute(wheels, leds, stop_event)
+        show_victory_leds(leds, now)

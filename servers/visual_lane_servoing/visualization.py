@@ -17,6 +17,11 @@ def create_lane_visualization(
     scale_y = display_h / h
     scale_x = display_w / w
 
+    x_split = debug_info.get('x_split')
+    if x_split is not None:
+        dx_mid = int(x_split * scale_x)
+        cv2.line(cam, (dx_mid, 0), (dx_mid, display_h), (80, 80, 80), 1)
+
     for sy in debug_info.get('slice_ys', []):
         dy = int(sy * scale_y)
         cv2.line(cam, (0, dy), (display_w, dy), (0, 255, 255), 1)

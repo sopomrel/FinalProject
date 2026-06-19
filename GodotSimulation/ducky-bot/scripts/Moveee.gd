@@ -148,3 +148,19 @@ func reset_game() -> void:
 	last_position = initial_position
 	start_time = Time.get_unix_time_from_system()
 	total_distance = 0.0
+
+
+func teleport_to(pos: Vector3, heading_y: float) -> void:
+	global_position = pos
+	rotation = Vector3(rotation.x, heading_y, rotation.z)
+	velocity = Vector3.ZERO
+	_current_omega = 0
+	game_over = false
+	collision_duck_name = ""
+	initial_position = global_position
+	initial_rotation = rotation
+	start_position = global_position
+	last_position = global_position
+	start_time = Time.get_unix_time_from_system()
+	total_distance = 0.0
+	print("[Robot] Teleported to ", global_position, " rotation.y=", rad_to_deg(heading_y))

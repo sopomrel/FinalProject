@@ -1,11 +1,18 @@
-"""Real-hardware server for the project navigation task.
+"""Virtual server for the project navigation task.
 
-Same dashboard and API as virtual_server.py; uses the Duckiebot camera and wheels.
+Exposes the same Flask endpoints as the lane-servoing server, plus:
+  GET  /get_hsv          — read current red HSV bounds
+  POST /update_hsv       — set one or more HSV fields live
+  POST /update_roi       — set roi_y_start or min_red_ratio live
+  GET  /get_lane_hsv     — read yellow/white lane HSV bounds
+  POST /update_lane_hsv  — set lane HSV (saves lane_servoing_hsv_config.yaml)
+  POST /update_lane_config — set p_gain / d_gain / base_speed
+  POST /set_view         — switch video between nav and lane mask views
+  GET  /status           — nav state machine info for the dashboard
 """
 
 import sys
 import os
-import signal
 import threading
 import time
 from typing import Optional
@@ -26,10 +33,10 @@ from servers.project.visualization import create_project_visualization
 from servers.visual_lane_servoing.visualization import create_lane_visualization
 from servers.templates.project import PROJECT_TEMPLATE as HTML_TEMPLATE
 
-from duckiebot.camera_driver import CameraDriver
-from duckiebot.wheel_driver import DaguWheelsDriver
+from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
 from duckiebot.wheel_driver.wheels_driver_abs import WheelPWMConfiguration
-from duckiebot.led_driver import LEDDriver
+from duckiebot.camera_driver.godot_camera_driver import GodotCameraDriver, GodotCameraConfig
+from duckiebot.led_driver import VirtualLEDsDriver
 from launcher.ports import find_available_port
 from servers.common import make_frame_generator, shutdown_cleanup, suppress_http_logs
 
@@ -45,7 +52,7 @@ leds    = None
 agent: ProjectAgent = None
 running     = False
 manual_mode = False
-view_mode   = 'nav'
+view_mode   = 'nav'   # 'nav' | 'lane'
 stop_event  = threading.Event()
 
 keys_pressed      = {'up': False, 'down': False, 'left': False, 'right': False}
@@ -58,49 +65,7 @@ def _lane_hsv_module():
     return visual_servoing_activity
 
 
-def _start_camera(max_attempts: int = 3, pause_s: float = 3.0):
-    last_exc = None
-    for attempt in range(1, max_attempts + 1):
-        cam = CameraDriver()
-        try:
-            cam.start()
-            return cam
-        except RuntimeError as exc:
-            last_exc = exc
-            try:
-                cam.stop()
-            except Exception:
-                pass
-            if attempt < max_attempts:
-                print(f"  Camera attempt {attempt}/{max_attempts} failed ({exc}); "
-                      f"retrying in {pause_s:.0f}s...")
-                time.sleep(pause_s)
-    raise last_exc
-
-
-def _init_leds():
-    """Hardware corner RGB LEDs (PCA9685). Returns None if unavailable."""
-    global leds
-    try:
-        leds = LEDDriver(debug=False)
-        print("  LEDs: ok")
-    except Exception as exc:
-        leds = None
-        print(f"  LEDs: unavailable ({exc}) — navigation runs without lights")
-    return leds
-
-
-def _release_leds() -> None:
-    global leds
-    if leds is None:
-        return
-    try:
-        leds.all_off()
-        leds.release()
-    except Exception as exc:
-        print(f"  LED shutdown: {exc}")
-    leds = None
-
+# ── Manual control loop ───────────────────────────────────────────────────────
 
 def manual_control_loop():
     global _keys_last_update
@@ -108,12 +73,16 @@ def manual_control_loop():
         if not manual_mode or not wheels:
             time.sleep(0.05)
             continue
+
+        # Zero keys if browser tab went silent for >0.5 s
         if time.time() - _keys_last_update > 0.5:
             with _keys_lock:
                 for k in keys_pressed:
                     keys_pressed[k] = False
+
         with _keys_lock:
             kc = keys_pressed.copy()
+
         left = right = 0.0
         if kc['up']:
             left, right = 0.5, 0.5
@@ -127,15 +96,17 @@ def manual_control_loop():
             left, right = -0.3, 0.3
         elif kc['right']:
             left, right = 0.3, -0.3
+
         wheels.set_wheels_speed(left, right)
         time.sleep(0.05)
 
 
-def visualize(frame_bgr):
+# ── Visualisation callback ────────────────────────────────────────────────────
+
+def visualize(frame_rgb):
+    """Called once per camera frame from the frame-generator thread."""
     global running
-    if frame_bgr is None:
-        return None
-    frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
 
     if agent is None or wheels is None:
         return frame_bgr
@@ -149,19 +120,23 @@ def visualize(frame_bgr):
             pwm_left, pwm_right = lane.compute_commands(frame_rgb)
             if not manual_mode:
                 wheels.set_wheels_speed(0.0, 0.0)
-        return create_lane_visualization(frame_bgr, lane.last_debug_info, pwm_left, pwm_right)
+        debug = lane.last_debug_info
+        return create_lane_visualization(frame_bgr, debug, pwm_left, pwm_right)
 
     if not manual_mode and running:
         agent.tick(frame_bgr, wheels, leds, stop_event)
 
-    debug_info = agent.get_debug_info()
-    stop_vis   = agent._stop_line.debug_frame(frame_bgr)
-    mask_u8    = agent._stop_line.last_mask_red
+    debug_info  = agent.get_debug_info()
+    stop_vis    = agent._stop_line.debug_frame(frame_bgr)
+    mask_u8     = agent._stop_line.last_mask_red
+
     return create_project_visualization(frame_bgr, debug_info, stop_vis, mask_u8)
 
 
-generate_frames = make_frame_generator(lambda: camera, visualize, quality=50, rgb=False)
+generate_frames = make_frame_generator(lambda: camera, visualize, quality=50)
 
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
 def index():
@@ -251,6 +226,7 @@ def update_hsv():
         pass
     merged.update(det_mod.get_hsv_bounds())
     merged.update({k: int(v) for k, v in data.items()})
+
     det_mod.set_hsv_bounds(
         r1_lower=[merged['red_lower_h_1'], merged['red_lower_s_1'], merged['red_lower_v_1']],
         r1_upper=[merged['red_upper_h_1'], merged['red_upper_s_1'], merged['red_upper_v_1']],
@@ -291,6 +267,7 @@ def set_view():
     if view not in ('nav', 'lane'):
         return jsonify({'status': 'error', 'message': 'view must be nav or lane'}), 400
     view_mode = view
+    print(f"[Project] View → {view_mode}")
     return jsonify({'view': view_mode})
 
 
@@ -353,9 +330,10 @@ def set_mode():
     mode = (request.json or {}).get('mode', 'auto')
     manual_mode = (mode == 'manual')
     if manual_mode:
-        running = False
+        running = False          # pause auto-nav while driving manually
     if wheels and not manual_mode:
         wheels.set_wheels_speed(0.0, 0.0)
+    print(f"[Project] Mode → {'manual' if manual_mode else 'auto'}")
     return jsonify({'mode': 'manual' if manual_mode else 'auto'})
 
 
@@ -374,6 +352,7 @@ def update_keys():
 def start():
     global running
     running = True
+    print("[Project] Started")
     return jsonify({'status': 'running'})
 
 
@@ -388,6 +367,7 @@ def stop():
             leds.all_off()
         except Exception:
             pass
+    print("[Project] Stopped")
     return jsonify({'status': 'stopped'})
 
 
@@ -401,7 +381,7 @@ def reset():
     global running
     running = False
     if wheels:
-        wheels.set_wheels_speed(0.0, 0.0)
+        wheels.reset_game()
     if agent:
         agent.reset_route()
     return jsonify({'status': 'ok'})
@@ -409,6 +389,7 @@ def reset():
 
 @app.route('/reset_route', methods=['POST'])
 def reset_route():
+    """Reset route progress only — does not move the robot in the game."""
     global running
     running = False
     if wheels:
@@ -419,6 +400,7 @@ def reset_route():
 
 
 def _parse_approach(raw) -> Optional[Cardinal]:
+    """Parse approach heading from API/CLI value, or None for route-aligned start."""
     if raw is None or raw == '' or str(raw).lower() in ('auto', 'none', '-'):
         return None
     val = str(raw).upper()
@@ -461,6 +443,9 @@ def set_route():
     info = agent.get_debug_info()
     stops = info.get('stops', [])
     first_turn = stops[0]['turn'] if stops else 'straight'
+    approach_label = info.get('approach_heading') or 'auto'
+    print(f"[Project] Route {start_node.value}→{goal_node.value} "
+          f"({info.get('num_red_lines')} red lines, approach {approach_label})")
     return jsonify({
         'status':           'ok',
         'start':            start_node.value,
@@ -473,22 +458,30 @@ def set_route():
     })
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 def main():
     global camera, wheels, leds, agent
 
     import argparse
-    ap = argparse.ArgumentParser(description="Real Project Navigation Server")
-    ap.add_argument("--port", type=int, default=5000)
-    ap.add_argument("--start", type=str, default="A")
-    ap.add_argument("--goal",  type=str, default="C")
-    ap.add_argument("--approach", type=str, default=None)
-    ap.add_argument("--no-detection", action="store_true")
+    ap = argparse.ArgumentParser(description="Virtual Project Navigation Server")
+    ap.add_argument("--port",        type=int,    default=5000)
+    ap.add_argument("--frame-port",  type=int,    default=5001)
+    ap.add_argument("--wheel-port",  type=int,    default=5002)
+    ap.add_argument("--godot-host",  type=str,    default="localhost")
+    ap.add_argument("--start",       type=str,    default="A",
+                    help="Start intersection (A/B/C)")
+    ap.add_argument("--goal",        type=str,    default="C",
+                    help="Goal intersection (A/B/C)")
+    ap.add_argument("--approach",    type=str,    default=None,
+                    help="Heading when crossing start line (N/S/E/W, or auto)")
+    ap.add_argument("--no-detection", action="store_true",
+                    help="Disable YOLO object detection")
     args = ap.parse_args()
 
-    stop_event.clear()
     suppress_http_logs()
     print("=" * 60)
-    print("REAL PROJECT NAVIGATION SERVER")
+    print("VIRTUAL PROJECT NAVIGATION SERVER")
     print("=" * 60)
 
     start_node = Intersection(args.start.upper())
@@ -499,16 +492,23 @@ def main():
           + (f"  (approach {approach.value})" if approach else ""))
 
     print("\n[1/4] Initializing wheels driver...")
-    wheels = DaguWheelsDriver(WheelPWMConfiguration(), WheelPWMConfiguration())
-    print("  Wheels: ok")
-    time.sleep(1.0)
+    wheels = GodotWheelsDriver(
+        WheelPWMConfiguration(pwm_min=0), WheelPWMConfiguration(pwm_min=0),
+        godot_host=args.godot_host,
+        godot_port=args.wheel_port,
+    )
+    wheels.trim = 0
 
     print("\n[2/4] Initializing camera driver...")
-    camera = _start_camera()
-    print("  Camera: ok")
+    camera = GodotCameraDriver(
+        godot_config=GodotCameraConfig(host="0.0.0.0", port=args.frame_port)
+    )
+    camera.start()
+    print("  Camera: connected!")
 
-    print("\n[3/4] Initializing LED driver...")
-    _init_leds()
+    print("\n[3/4] Initializing virtual LED driver...")
+    leds = VirtualLEDsDriver(debug=False)
+    print("  LEDs: ok (virtual)")
 
     print("\n[4/4] Creating navigation agent...")
     agent = ProjectAgent(
@@ -520,26 +520,26 @@ def main():
 
     threading.Thread(target=manual_control_loop, daemon=True).start()
 
-    def _shutdown(signum, frame):
-        print("\nShutting down...")
-        _release_leds()
-        shutdown_cleanup(wheels, camera, stop_event)
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
-
     web_port = find_available_port(args.port)
+    if web_port != args.port:
+        print(f"  Port {args.port} busy, using {web_port}")
+
     print("\n" + "=" * 60)
-    print(f"Web Interface: http://{socket.gethostname()}.local:{web_port}")
+    print(f"Web Interface: http://localhost:{web_port}")
+    print(f"  Start: {start_node.value}   Goal: {goal_node.value}")
     print("=" * 60 + "\n")
 
     try:
-        app.run(host='0.0.0.0', port=web_port, debug=False, threaded=True)
-    except (KeyboardInterrupt, SystemExit):
-        pass
+        app.run(host='127.0.0.1', port=web_port, debug=False, threaded=True)
+    except KeyboardInterrupt:
+        print("\nShutting down...")
     finally:
-        _release_leds()
+        if leds:
+            try:
+                leds.all_off()
+                leds.release()
+            except Exception:
+                pass
         shutdown_cleanup(wheels, camera, stop_event)
 
 

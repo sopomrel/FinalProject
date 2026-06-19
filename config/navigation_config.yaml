@@ -1,0 +1,12 @@
+stop_wait_s: 2.0
+cross_forward_s:
+  straight: 2.8
+  left: 5.4
+  right: 3.55
+  goal: 0.5
+forward_bias_s:
+  straight: 0.0
+  left: 1.3
+  right: 0.75
+victory_forward_s: 4.0
+victory_spin_s: 8.1

@@ -16,29 +16,45 @@ _LINE_OFFSET = 160
 _ROI_START   = 0.47
 _NUM_SLICES  = 3
 _SLICE_TOL   = 5
+# Right-hand driving: yellow centre line is left of centre, white edge is right.
+# Slice search and masks are split so white is never sampled on the left half.
+_X_SPLIT     = 0.5
+
+
+def _apply_lateral_roi(mask_yellow: np.ndarray, mask_white: np.ndarray) -> Tuple[np.ndarray, np.ndarray, int]:
+    """Zero the wrong half of each mask; return (yellow, white, x_split_col)."""
+    h, w = mask_yellow.shape
+    x_mid = int(w * _X_SPLIT)
+    yellow = mask_yellow.copy()
+    white  = mask_white.copy()
+    yellow[:, x_mid:] = 0
+    white[:, :x_mid] = 0
+    return yellow, white, x_mid
 
 
 def detect_lines_in_slices(
     mask_yellow: np.ndarray,
     mask_white:  np.ndarray,
     h: int,
+    w: int,
 ) -> Tuple[list, list]:
     slice_height = int(h * 0.35 / _NUM_SLICES)
     start_y      = int(h * _ROI_START)
+    x_mid        = int(w * _X_SPLIT)
     yellow_xs, white_xs = [], []
 
     for i in range(_NUM_SLICES):
         y = start_y + i * slice_height + slice_height // 2
 
-        strip_y = mask_yellow[y - _SLICE_TOL: y + _SLICE_TOL, :]
+        strip_y = mask_yellow[y - _SLICE_TOL: y + _SLICE_TOL, :x_mid]
         idx = np.where(strip_y > 0)[1]
         if len(idx) > 0:
             yellow_xs.append(int(np.mean(idx)))
 
-        strip_w = mask_white[y - _SLICE_TOL: y + _SLICE_TOL, :]
+        strip_w = mask_white[y - _SLICE_TOL: y + _SLICE_TOL, x_mid:]
         idx = np.where(strip_w > 0)[1]
         if len(idx) > 0:
-            white_xs.append(int(np.mean(idx)))
+            white_xs.append(int(np.mean(idx)) + x_mid)
 
     return yellow_xs, white_xs
 
@@ -136,12 +152,17 @@ class LaneServoingAgent:
 
         mask_y = (mask_left  * 255).astype(np.uint8)
         mask_w = (mask_right * 255).astype(np.uint8)
+        h, w = mask_y.shape
+        mask_y, mask_w, x_mid = _apply_lateral_roi(mask_y, mask_w)
 
         yellow_pixels = int(np.count_nonzero(mask_y))
         white_pixels  = int(np.count_nonzero(mask_w))
         total_pixels  = yellow_pixels + white_pixels
 
-        combined = np.clip(mask_left + mask_right, 0, 1)
+        combined = np.clip(
+            mask_y.astype(np.float32) / 255.0 + mask_w.astype(np.float32) / 255.0,
+            0, 1,
+        )
         self.last_debug_info = {
             'roi':               image,
             'lane_mask':         (combined * 255).astype(np.uint8),
@@ -153,12 +174,11 @@ class LaneServoingAgent:
             'frame_count':       self.frame_count,
         }
 
-        h, w      = mask_y.shape
         left_det  = yellow_pixels > 0
         right_det = white_pixels  > 0
         recovery  = total_pixels  < self.detection_threshold
 
-        yellow_xs, white_xs = detect_lines_in_slices(mask_y, mask_w, h)
+        yellow_xs, white_xs = detect_lines_in_slices(mask_y, mask_w, h, w)
         both_visible        = left_det and right_det and not recovery
         is_curve, curve_dir = detect_curve(yellow_xs, white_xs, self.curve_threshold)
 
@@ -174,6 +194,7 @@ class LaneServoingAgent:
             'yellow_xs': yellow_xs,
             'white_xs':  white_xs,
             'slice_ys':  [start_y + i * slice_height + slice_height // 2 for i in range(_NUM_SLICES)],
+            'x_split':   x_mid,
             'is_curve':  is_curve,
             'curve_dir': curve_dir,
         })

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from math import fabs, floor, pi
 import json
+import math
 import os
 import select
 import socket
@@ -180,6 +181,25 @@ class GodotWheelTransport:
             print(f"[GodotWheelTransport] Send failed: {e}")
             self.close()
 
+    def request_state(self) -> None:
+        """Ask Godot for latest odometry (simulation)."""
+        self._check_incoming()
+
+        if not self._ensure_connected():
+            return
+
+        msg = {"type": "get_state", "ts": float(time.time())}
+        payload = json.dumps(msg).encode("utf-8")
+        header = struct.pack("!I", len(payload))
+
+        try:
+            assert self._sock is not None
+            self._sock.sendall(header + payload)
+            self._check_incoming()
+        except Exception as e:
+            print(f"[GodotWheelTransport] request_state failed: {e}")
+            self.close()
+
     def send_reset(self) -> None:
         if not self._ensure_connected():
             return
@@ -196,6 +216,35 @@ class GodotWheelTransport:
         except Exception as e:
             print(f"[GodotWheelTransport] Reset send failed: {e}")
             self.close()
+
+    def send_teleport(self, x: float, y: float, z: float, heading: float) -> bool:
+        for attempt in range(5):
+            if not self._ensure_connected():
+                time.sleep(0.1)
+                continue
+            msg = {
+                "type": "teleport",
+                "x": float(x),
+                "y": float(y),
+                "z": float(z),
+                "heading": float(heading),
+            }
+            payload = json.dumps(msg).encode("utf-8")
+            header = struct.pack("!I", len(payload))
+            try:
+                assert self._sock is not None
+                self._sock.sendall(header + payload)
+                self.game_state = GameState()
+                print(
+                    f"[GodotWheelTransport] Teleport -> ({x:.3f}, {y:.3f}, {z:.3f}) "
+                    f"heading={math.degrees(heading):.1f}°"
+                )
+                return True
+            except Exception as e:
+                print(f"[GodotWheelTransport] Teleport send failed (attempt {attempt + 1}): {e}")
+                self.close()
+                time.sleep(0.1)
+        return False
 
     def send_remove_objects(self, name_filter: str) -> None:
         if not self._ensure_connected():
@@ -286,6 +335,11 @@ class GodotWheelsDriver(WheelsDriverAbs):
     def reset_game(self) -> None:
         self.transport.send_reset()
 
+    def teleport_to(self, x: float, y: float, z: float, heading: float) -> bool:
+        """Move the Godot bot to a world pose (simulation only)."""
+        self.set_wheels_speed(0.0, 0.0)
+        return self.transport.send_teleport(x, y, z, heading)
+
     def remove_objects(self, name_filter: str) -> None:
         self.transport.send_remove_objects(name_filter)
 
@@ -330,6 +384,7 @@ class GodotWheelsDriver(WheelsDriverAbs):
         self._executed_right = (pwmr * rightMotorMode.value) / 255.0
 
         if not self.pretend:
+            self.transport.request_state()
             self.transport.send_wheels(self._executed_left, self._executed_right)
 
     def set_velocity(self, v: float, omega: float):

@@ -164,6 +164,20 @@ func _process(_delta: float) -> void:
 				game_over = false
 				print("[WheelServer] Game reset by Python")
 
+		elif msg_type == "teleport":
+			var robot = get_parent()
+			if robot and robot.has_method("teleport_to"):
+				var x: float = float(d.get("x", 0.0))
+				var y: float = float(d.get("y", 0.0445))
+				var z: float = float(d.get("z", 0.0))
+				var heading: float = float(d.get("heading", 0.0))
+				robot.teleport_to(Vector3(x, y, z), heading)
+				game_over = false
+				left_cmd = 0.0
+				right_cmd = 0.0
+				print("[WheelServer] Teleport by Python -> (%.3f, %.3f, %.3f) heading=%.1f°"
+					% [x, y, z, rad_to_deg(heading)])
+
 		elif msg_type == "remove_objects":
 			var filter_str: String = str(d.get("filter", "")).to_lower()
 			if filter_str != "":

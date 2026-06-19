@@ -336,6 +336,7 @@ def package_task(task_name):
         return tarinfo
 
     task_models_dir = os.path.join(PROJECT_ROOT, 'tasks', task_name, 'models')
+    task_data_dir = os.path.join(PROJECT_ROOT, 'tasks', task_name, 'data')
     task_server_dir = os.path.join(PROJECT_ROOT, 'servers', task_name)
 
     buf = io.BytesIO()
@@ -345,6 +346,9 @@ def package_task(task_name):
         if os.path.exists(config_dir):
             print(f"   Adding configs: config/")
             tar.add(config_dir, arcname='config', filter=no_pycache)
+        if os.path.exists(task_data_dir):
+            print(f"   Adding data: tasks/{task_name}/data/")
+            tar.add(task_data_dir, arcname=f'tasks/{task_name}/data', filter=no_pycache)
         if os.path.exists(task_models_dir):
             print(f"   Adding models: tasks/{task_name}/models/")
             tar.add(task_models_dir, arcname=f'tasks/{task_name}/models', filter=no_pycache)
