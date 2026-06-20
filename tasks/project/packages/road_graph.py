@@ -38,8 +38,6 @@ Grid compass: row ``z`` increases south, column ``x`` increases east.
 Each edge's ``exit_direction`` is inferred from its first tile step.
 """
 
-from __future__ import annotations
-
 import heapq
 from dataclasses import dataclass
 from enum import Enum

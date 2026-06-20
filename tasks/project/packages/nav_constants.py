@@ -1,7 +1,5 @@
 """Shared navigation constants — speeds, LED colours, phase enum."""
 
-from __future__ import annotations
-
 from enum import Enum, auto
 
 from tasks.project.packages.road_graph import Turn

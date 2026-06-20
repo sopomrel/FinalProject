@@ -28,8 +28,6 @@ debounces the trigger with confirm / release frame counts — the same
 idea as the pixel-threshold approach in ``LaneServoingAgent``.
 """
 
-from __future__ import annotations
-
 import os
 from typing import Tuple
 

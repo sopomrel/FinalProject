@@ -1,7 +1,5 @@
 """Victory dance — forward creep, spin, flashing LEDs after mission complete."""
 
-from __future__ import annotations
-
 import time
 
 from tasks.project.packages.led_control import show_victory_leds

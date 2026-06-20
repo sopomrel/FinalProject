@@ -1,7 +1,5 @@
 """Corner LED patterns — front/back/left/right by navigation state."""
 
-from __future__ import annotations
-
 from typing import Iterable, Tuple
 
 # Duckiebot corner indices (1 is unused):

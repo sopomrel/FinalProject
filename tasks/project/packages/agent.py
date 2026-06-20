@@ -11,8 +11,6 @@ Mission flow
 Same ``ProjectAgent`` runs in simulation (virtual server) and on hardware (real server).
 """
 
-from __future__ import annotations
-
 import time
 from typing import Optional, Tuple
 
