@@ -179,9 +179,13 @@ func _process(_delta: float) -> void:
 					% [x, y, z, rad_to_deg(heading)])
 
 		elif msg_type == "remove_objects":
-			var filter_str: String = str(d.get("filter", "")).to_lower()
-			if filter_str != "":
-				_remove_matching(get_tree().get_root(), filter_str)
+			var bbox: Variant = d.get("bbox")
+			if typeof(bbox) == TYPE_ARRAY and bbox.size() >= 4:
+				_remove_duck_by_bbox(bbox)
+			else:
+				var filter_str: String = str(d.get("filter", "")).to_lower()
+				if filter_str != "":
+					_remove_matching(get_tree().get_root(), filter_str)
 
 		elif msg_type == "change_scene":
 			var scene_path: String = str(d.get("scene", ""))
@@ -206,6 +210,61 @@ func _remove_matching(node: Node, filter: String) -> bool:
 			return true
 		if _remove_matching(child, filter):
 			return true
+	return false
+
+
+func _get_bot_camera() -> Camera3D:
+	var robot = get_parent()
+	if robot == null:
+		return null
+	var vp = robot.get_node_or_null("BotCameraViewport")
+	if vp == null:
+		return null
+	return vp.get_node_or_null("BotCamera") as Camera3D
+
+
+func _collect_duck_nodes(node: Node, out: Array) -> void:
+	if node is RigidBody3D:
+		var n := node.name.to_lower()
+		if n.contains("duckie") or n.begins_with("duck_"):
+			out.append(node)
+	for child in node.get_children():
+		_collect_duck_nodes(child, out)
+
+
+func _remove_duck_by_bbox(bbox: Array) -> bool:
+	var cam := _get_bot_camera()
+	if cam == null:
+		push_warning("[WheelServer] BotCamera not found for bbox removal")
+		return false
+
+	var x1 := float(bbox[0])
+	var y1 := float(bbox[1])
+	var x2 := float(bbox[2])
+	var y2 := float(bbox[3])
+	var center := Vector2((x1 + x2) * 0.5, (y1 + y2) * 0.5)
+
+	var ducks: Array = []
+	_collect_duck_nodes(get_tree().get_root(), ducks)
+
+	var best: Node = null
+	var best_score := INF
+	for duck in ducks:
+		if duck == get_parent():
+			continue
+		var screen: Vector2 = cam.unproject_position(duck.global_position)
+		var in_bbox := screen.x >= x1 and screen.x <= x2 and screen.y >= y1 and screen.y <= y2
+		var score := screen.distance_to(center) + (0.0 if in_bbox else 10000.0)
+		if score < best_score:
+			best_score = score
+			best = duck
+
+	if best != null:
+		print("[WheelServer] Removed detected duck: ", best.name, " bbox=", bbox)
+		best.queue_free()
+		return true
+
+	push_warning("[WheelServer] No duck matched bbox " + str(bbox))
 	return false
 
 func _send_state() -> void:

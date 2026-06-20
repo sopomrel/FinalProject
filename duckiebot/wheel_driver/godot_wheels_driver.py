@@ -246,18 +246,32 @@ class GodotWheelTransport:
                 time.sleep(0.1)
         return False
 
-    def send_remove_objects(self, name_filter: str) -> None:
+    def send_remove_objects(
+        self,
+        name_filter: str = '',
+        bbox: Optional[list] = None,
+    ) -> None:
         if not self._ensure_connected():
             return
 
-        msg = {"type": "remove_objects", "filter": name_filter}
+        msg: dict = {"type": "remove_objects"}
+        if bbox is not None:
+            msg["bbox"] = [int(v) for v in bbox]
+        elif name_filter:
+            msg["filter"] = name_filter
+        else:
+            return
+
         payload = json.dumps(msg).encode("utf-8")
         header = struct.pack("!I", len(payload))
 
         try:
             assert self._sock is not None
             self._sock.sendall(header + payload)
-            print(f"[GodotWheelTransport] Sent remove_objects filter={name_filter!r}")
+            if bbox is not None:
+                print(f"[GodotWheelTransport] Sent remove_objects bbox={bbox}")
+            else:
+                print(f"[GodotWheelTransport] Sent remove_objects filter={name_filter!r}")
         except Exception as e:
             print(f"[GodotWheelTransport] remove_objects send failed: {e}")
             self.close()
@@ -340,8 +354,12 @@ class GodotWheelsDriver(WheelsDriverAbs):
         self.set_wheels_speed(0.0, 0.0)
         return self.transport.send_teleport(x, y, z, heading)
 
-    def remove_objects(self, name_filter: str) -> None:
-        self.transport.send_remove_objects(name_filter)
+    def remove_objects(
+        self,
+        name_filter: str = '',
+        bbox: Optional[list] = None,
+    ) -> None:
+        self.transport.send_remove_objects(name_filter=name_filter, bbox=bbox)
 
     def change_scene(self, scene_path: str) -> None:
         self.transport.send_change_scene(scene_path)

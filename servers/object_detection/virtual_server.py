@@ -14,7 +14,7 @@ from flask import Flask, Response, render_template_string, jsonify, request
 
 from tasks.visual_lane_servoing.packages.agent import LaneServoingAgent
 from tasks.object_detection.packages.agent import ObjectDetectionAgent, CLASS_NAMES
-from tasks.object_detection.packages.stop_activity import should_stop as student_should_stop
+from tasks.object_detection.packages.stop_activity import should_stop as student_should_stop, stopping_detection
 from servers.object_detection.visualization import draw_detections
 from servers.templates.object_detection import OBJECT_DETECTION_TEMPLATE as HTML_TEMPLATE
 
@@ -37,6 +37,7 @@ stop_event = threading.Event()
 
 _frame_queue     = queue.Queue(maxsize=1)
 _last_detections = []
+_last_img_h      = 480
 _detection_lock  = threading.Lock()
 _stopped_by_det  = False
 _stop_reason     = ''
@@ -108,8 +109,9 @@ def _should_stop(detections, img_size: int):
 
 
 def visualize(frame_rgb):
-    global _stopped_by_det, _stop_reason, _stop_streak
+    global _stopped_by_det, _stop_reason, _stop_streak, _last_img_h
 
+    _last_img_h = frame_rgb.shape[0]
     bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
 
     if wheels is None:
@@ -231,15 +233,30 @@ def update_keys():
 @app.route('/remove_objects', methods=['POST'])
 def remove_objects():
     global _stopped_by_det, _stop_reason, _last_detections, _stop_streak
-    name_filter = request.json.get('filter', '') if request.json else ''
-    if wheels and name_filter:
-        wheels.remove_objects(name_filter)
+    data = request.json or {}
+    name_filter = data.get('filter', '')
+    bbox = data.get('bbox')
+
+    if bbox is None and _last_detections:
+        with _detection_lock:
+            dets = list(_last_detections)
+        if dets:
+            det = stopping_detection(dets, _last_img_h)
+            if det is None:
+                det = max(dets, key=lambda d: d[0][3])
+            bbox = list(det[0])
+
+    if wheels and bbox is not None:
+        wheels.remove_objects(bbox=bbox)
+    elif wheels and name_filter:
+        wheels.remove_objects(name_filter=name_filter)
+
     _stopped_by_det = False
     _stop_reason    = ''
     _stop_streak    = 0
     with _detection_lock:
         _last_detections = []
-    return jsonify({'status': 'ok', 'filter': name_filter})
+    return jsonify({'status': 'ok', 'filter': name_filter, 'bbox': bbox})
 
 @app.route('/set_threshold', methods=['POST'])
 def set_threshold():

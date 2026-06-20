@@ -1,18 +1,19 @@
-[gd_scene load_steps=10 format=3 uid="uid://de4xw4gt0dsvs"]
+[gd_scene load_steps=11 format=3 uid="uid://b2xff4njercjg"]
 
-[ext_resource type="PackedScene" uid="uid://by8pqr474iaqj" path="res://scenes/robot/duckie_bot.tscn" id="1_w5h3n"]
-[ext_resource type="Environment" uid="uid://xlfv0dsmbfcm" path="res://Environment.tres" id="2_v5i1m"]
-[ext_resource type="Texture2D" uid="uid://ctpxnl5i08jgn" path="res://textures/leafy_grass_diff_4k.png" id="3_uvbh3"]
-[ext_resource type="Texture2D" uid="uid://dmarl4bfd7bia" path="res://textures/leafy_grass_nor_gl_4k.png" id="4_gi0y1"]
-[ext_resource type="PackedScene" uid="uid://3d3mqjeeyhw6" path="res://scenes/robot/IntroductionBase.tscn" id="5_q1r67"]
+[ext_resource type="PackedScene" uid="uid://by8pqr474iaqj" path="res://scenes/robot/duckie_bot.tscn" id="1_s7fa3"]
+[ext_resource type="Environment" uid="uid://xlfv0dsmbfcm" path="res://Environment.tres" id="2_errgf"]
+[ext_resource type="Texture2D" uid="uid://ctpxnl5i08jgn" path="res://textures/leafy_grass_diff_4k.png" id="3_ukwgy"]
+[ext_resource type="Texture2D" uid="uid://dmarl4bfd7bia" path="res://textures/leafy_grass_nor_gl_4k.png" id="4_qkqye"]
+[ext_resource type="PackedScene" uid="uid://3d3mqjeeyhw6" path="res://scenes/robot/IntroductionBase.tscn" id="5_lvv8j"]
+[ext_resource type="PackedScene" uid="uid://b7ugvo11ae2ss" path="res://scenes/objects/DuckieRagdool.tscn" id="6_irsf1"]
 
 [sub_resource type="WorldBoundaryShape3D" id="WorldBoundaryShape3D_lqe0e"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_g70oi"]
 albedo_color = Color(0.14695662, 0.23146757, 0.031017188, 1)
-albedo_texture = ExtResource("3_uvbh3")
+albedo_texture = ExtResource("3_ukwgy")
 normal_enabled = true
-normal_texture = ExtResource("4_gi0y1")
+normal_texture = ExtResource("4_qkqye")
 uv1_scale = Vector3(60, 60, 60)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_v2526"]
@@ -22,12 +23,12 @@ size = Vector3(2.0014038, 0.01751709, 1.9967651)
 
 [node name="Project" type="Node3D"]
 
-[node name="DuckieBot" parent="." instance=ExtResource("1_w5h3n")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.3940525, 0.044506483, 4.8696938)
+[node name="DuckieBot" parent="." instance=ExtResource("1_s7fa3")]
+transform = Transform3D(0.99965733, 0, -0.02617695, 0, 1, 0, 0.02617695, 0, 0.99965733, 4.3686967, 0.044506483, 5.252386)
 
 [node name="TopView" type="Camera3D" parent="DuckieBot"]
 transform = Transform3D(1.0000002, 0, 0, 0, 0.760406, 0.64944804, 0, -0.6494482, 0.7604062, 0, 0.549, 0.679)
-environment = ExtResource("2_v5i1m")
+environment = ExtResource("2_errgf")
 
 [node name="Terrain" type="Node3D" parent="."]
 
@@ -54,6 +55,7 @@ transform = Transform3D(1, 0, 0, 0, 0.0074698986, 0.9999721, 0, -0.9999721, 0.00
 
 [node name="DirectionalLight3D2" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.6938119, -0.5147703, 0.5036236, 0.08601526, 0.7535541, 0.6517344, -0.7150011, -0.4088617, 0.5671029, 5.9867754, 0.5320841, 5.418177)
+visible = false
 light_color = Color(0.97479993, 0.76028913, 0.58754224, 1)
 light_energy = 0.4
 shadow_enabled = true
@@ -65,5 +67,28 @@ light_color = Color(0.5755736, 0.85234576, 0.9999997, 1)
 light_energy = 0.202
 shadow_enabled = true
 
-[node name="KiuPathObj" parent="." instance=ExtResource("5_q1r67")]
+[node name="KiuPathObj" parent="." instance=ExtResource("5_lvv8j")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4.2620525, 0.010445523, 4.8696938)
+
+[node name="Ducks" type="Node3D" parent="."]
+
+[node name="Duckie" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(-0.706094, 0, 0.7081181, 0, 1, 0, -0.7081181, 0, -0.706094, 4.227935, 0.061383232, 1.5676732)
+
+[node name="Duckie2" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(0.15846826, 0, -0.98736405, 0, 1, 0, 0.98736405, 0, 0.15846826, 4.366096, 0.061383232, 2.7223756)
+
+[node name="Duckie3" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(0.6373164, -0.09001359, -0.765327, 0, 0.99315435, -0.11680941, 0.7706022, 0.074444555, 0.6329536, 4.4377294, 0.061383232, 4.082597)
+
+[node name="Duckie4" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(-0.8854991, 0, -0.4646412, 0, 1, 0, 0.4646412, 0, -0.8854991, 5.348036, 0.061383232, 4.5874357)
+
+[node name="Duckie5" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.157048, 0.061383232, 1.8023305)
+
+[node name="Duckie6" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(-0.9157608, 0, -0.401724, 0, 1, 0, 0.401724, 0, -0.9157608, 6.6291814, 0.061383232, 2.9687417)
+
+[node name="Duckie7" parent="Ducks" instance=ExtResource("6_irsf1")]
+transform = Transform3D(0.8256456, 0, -0.5641891, 0, 1, 0, 0.5641891, 0, 0.8256456, 7.236731, 0.061383232, 0.7897048)

@@ -17,8 +17,8 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from tasks.object_detection.packages.agent import ObjectDetectionAgent
-from tasks.object_detection.packages.stop_activity import should_stop
+from tasks.object_detection.packages.agent import ObjectDetectionAgent, CLASS_NAMES
+from tasks.object_detection.packages.stop_activity import should_stop, stopping_detection
 from tasks.project.packages.crossing import CrossingMixin
 from tasks.project.packages.intersection_detector import IntersectionDetector
 from tasks.project.packages.lane_drive import LaneDriveMixin
@@ -89,6 +89,7 @@ class ProjectAgent(LaneDriveMixin, CrossingMixin, VictoryMixin):
         self.last_pwm: Tuple[float, float] = (0.0, 0.0)
         self.last_frame: Optional[np.ndarray] = None
         self._last_detections = []
+        self._stop_reason = ''
         self._blind_straight = False
 
         print(f"[Nav] {self.plan.summary()}")
@@ -116,7 +117,27 @@ class ProjectAgent(LaneDriveMixin, CrossingMixin, VictoryMixin):
         self._active_stop = None
         self._active_turn = None
         self._stop_line.reset()
+        self._last_detections = []
+        self._stop_reason = ''
         print(f"[Nav] Reset — drive to red line 1 at {self.plan.start.value}")
+
+    def clear_obstacle(self) -> None:
+        """Resume navigation after a detected obstacle is removed from the scene."""
+        if self._phase == Phase.OBSTACLE_STOP:
+            self._phase = Phase.LANE_FOLLOWING
+        self._last_detections = []
+        self._stop_reason = ''
+
+    def obstacle_removal_bbox(self) -> Optional[list]:
+        """Bbox [x1,y1,x2,y2] of the duck blocking the robot, if any."""
+        if not self._last_detections or self.last_frame is None:
+            return None
+        img_h = self.last_frame.shape[0]
+        det = stopping_detection(self._last_detections, img_h)
+        if det is None:
+            det = max(self._last_detections, key=lambda d: d[0][3])
+        bbox, _, _ = det
+        return list(bbox)
 
     def apply_navigation_config(self, cfg: dict) -> None:
         """Apply timing changes live (also used after dashboard updates)."""
@@ -184,18 +205,21 @@ class ProjectAgent(LaneDriveMixin, CrossingMixin, VictoryMixin):
             return
 
         if self._phase == Phase.OBSTACLE_STOP:
-            stop, _ = should_stop(detections, frame_rgb.shape[0])
+            stop, reason = should_stop(detections, frame_rgb.shape[0])
             if stop:
+                self._stop_reason = reason
                 wheels.set_wheels_speed(0.0, 0.0)
                 self.last_pwm = (0.0, 0.0)
                 show_stopped_leds(leds)
                 return
             self._phase = Phase.LANE_FOLLOWING
+            self._stop_reason = ''
 
         if detections:
             stop, reason = should_stop(detections, frame_rgb.shape[0])
             if stop:
                 print(f"[Nav] Obstacle: {reason}")
+                self._stop_reason = reason
                 wheels.set_wheels_speed(0.0, 0.0)
                 self.last_pwm = (0.0, 0.0)
                 self._phase = Phase.OBSTACLE_STOP
@@ -303,6 +327,29 @@ class ProjectAgent(LaneDriveMixin, CrossingMixin, VictoryMixin):
                 for s in self.plan.stops
             ],
             "detections":       len(self._last_detections),
+            "detection_list":   [
+                {
+                    'class': CLASS_NAMES.get(c, str(c)),
+                    'score': round(s, 3),
+                    'bbox':  list(b),
+                }
+                for b, s, c in self._last_detections
+            ],
+            "stopped_by_detection": self._phase == Phase.OBSTACLE_STOP,
+            "stop_reason":          self._stop_reason,
+            "model_loaded":         (
+                self._detector.model_loaded if self._detector is not None else False
+            ),
+            "load_error":           (
+                self._detector.load_error if self._detector is not None else None
+            ),
+            "trt_building":         (
+                getattr(self._detector, 'trt_building', False)
+                if self._detector is not None else False
+            ),
+            "conf_threshold":       (
+                self._detector.conf_threshold if self._detector is not None else 0.5
+            ),
             "red_ratio":        round(self._stop_line.last_ratio, 4),
             "at_stopline":      self._stop_line._triggered,
             "blind_straight":   self._blind_straight,

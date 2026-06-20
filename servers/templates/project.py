@@ -145,12 +145,74 @@ _EXTRA_CSS = '''
 .key-left  { grid-area: left; }
 .key-right { grid-area: right; }
 .key-hint  { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Object detection (simulation) ─────────────────────────────────────────── */
+.video-wrapper {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+}
+.stop-banner {
+    display: none;
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(192,57,43,0.88);
+    color: #fff;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 16px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+}
+.stop-banner.active { display: block; }
+.stream.stopped { outline: 3px solid #c0392b; }
+
+.detections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.det-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 12px;
+}
+.det-class { font-weight: 600; color: var(--text-primary); }
+.det-score { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.det-bbox  { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.empty-state { color: var(--text-muted); font-size: 12px; text-align: center; padding: 12px; }
+
+.model-status { padding: 6px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 10px; }
+.model-status.ok      { background: rgba(63,185,80,0.1);  border: 1px solid rgba(63,185,80,0.3);  color: var(--accent-green); }
+.model-status.err     { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.3);  color: var(--accent-red); }
+.model-status.building{ background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: #d6a63a; }
+
+.trt-build-card { display: none; }
+.trt-build-hint { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+.trt-ready      { font-size: 15px; font-weight: 700; color: var(--accent-green); text-align: center; padding: 6px 0; }
 '''
 
 _CONTENT = '''
     <div class="container">
         <div class="video-section">
-            <img src="{{ url_for('video') }}" class="stream" alt="Navigation Stream">
+            <div class="video-wrapper">
+                <div id="stop-banner" class="stop-banner"></div>
+                <img src="{{ url_for('video') }}" id="stream-img" class="stream" alt="Navigation Stream">
+            </div>
         </div>
 
         <div class="controls-section">
@@ -229,6 +291,38 @@ _CONTENT = '''
                         <button onclick="resetPosition()" class="button" style="flex:1;background:var(--accent-orange)">Reset Position</button>
                     </div>
                     <div id="nav-status" class="status"></div>
+                </div>
+
+                <!-- Object detection (simulation) -->
+                <div class="card">
+                    <div class="card-header">Scene Objects</div>
+                    <button onclick="removeObjects()" class="button" style="width:100%;background:#555">Remove Duck &amp; Continue</button>
+                </div>
+
+                <div class="card trt-build-card" id="trt-build-card">
+                    <div class="card-header" id="trt-header">Building TensorRT Engine</div>
+                    <p class="trt-build-hint">Navigation works now — detection starts when done.</p>
+                    <div class="trt-ready" id="trt-ready" style="display:none">Detection started!</div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">Confidence Threshold</div>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <input id="conf-slider" type="range" min="0" max="1" step="0.01" value="0.5"
+                            style="flex:1" oninput="onThresholdChange(this.value)">
+                        <span id="conf-value" style="font-size:13px;font-variant-numeric:tabular-nums;min-width:32px">0.50</span>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        Detection
+                        <span style="font-size:11px;font-weight:400;color:var(--text-muted)" id="det-count"></span>
+                    </div>
+                    <div id="model-status" class="model-status ok">Loading…</div>
+                    <div id="detections" class="detections-list">
+                        <div class="empty-state">Waiting for frames…</div>
+                    </div>
                 </div>
 
                 <!-- Intersection crossing timing -->
@@ -659,6 +753,20 @@ _JS = '''
     }
 
     // ── Status polling ────────────────────────────────────────────────────────
+    let _sliderDirty = false;
+
+    function removeObjects() {
+        postJSON('/remove_objects', {})
+            .then(() => showStatus('nav-status', 'Duck removed — resuming navigation', 'success'))
+            .catch(() => showStatus('nav-status', 'Remove failed', 'error'));
+    }
+
+    function onThresholdChange(value) {
+        document.getElementById('conf-value').textContent = parseFloat(value).toFixed(2);
+        _sliderDirty = true;
+        postJSON('/set_threshold', {value: parseFloat(value)}).then(() => { _sliderDirty = false; });
+    }
+
     function pollStatus() {
         fetch('/status').then(r => r.json()).then(d => {
             document.getElementById('stat-state').textContent = d.state  || '—';
@@ -675,6 +783,73 @@ _JS = '''
                 badge.textContent = 'RUNNING'; badge.className = 'status-badge running';
             } else {
                 badge.textContent = 'STOPPED'; badge.className = 'status-badge stopped';
+            }
+
+            // Stop banner + red outline on video
+            const banner = document.getElementById('stop-banner');
+            const streamImg = document.getElementById('stream-img');
+            if (d.stopped_by_detection) {
+                banner.textContent = 'STOPPED — ' + (d.stop_reason || 'obstacle detected');
+                banner.classList.add('active');
+                streamImg.classList.add('stopped');
+            } else {
+                banner.classList.remove('active');
+                streamImg.classList.remove('stopped');
+            }
+
+            // TRT build card
+            const trtCard = document.getElementById('trt-build-card');
+            if (trtCard) {
+                if (d.trt_building) {
+                    trtCard.style.display = 'block';
+                } else if (trtCard._wasBuilding) {
+                    document.getElementById('trt-header').textContent = 'TensorRT Engine Ready';
+                    document.getElementById('trt-ready').style.display = 'block';
+                    setTimeout(() => { trtCard.style.display = 'none'; trtCard._wasBuilding = false; }, 4000);
+                } else {
+                    trtCard.style.display = 'none';
+                }
+                trtCard._wasBuilding = d.trt_building;
+            }
+
+            // Model status chip
+            const status = document.getElementById('model-status');
+            if (status) {
+                if (d.trt_building) {
+                    status.className = 'model-status building';
+                    status.textContent = 'Building TensorRT engine…';
+                } else if (d.model_loaded) {
+                    status.className = 'model-status ok';
+                    status.textContent = 'Model loaded';
+                } else {
+                    status.className = 'model-status err';
+                    status.textContent = d.load_error || 'Model not loaded';
+                }
+            }
+
+            // Sync confidence slider
+            if (!_sliderDirty && d.conf_threshold != null) {
+                const slider = document.getElementById('conf-slider');
+                if (slider) {
+                    slider.value = d.conf_threshold;
+                    document.getElementById('conf-value').textContent = d.conf_threshold.toFixed(2);
+                }
+            }
+
+            const dets = d.detections || [];
+            const detCount = document.getElementById('det-count');
+            if (detCount) detCount.textContent = dets.length ? dets.length + ' found' : '';
+
+            const list = document.getElementById('detections');
+            if (list) {
+                list.innerHTML = dets.length === 0
+                    ? '<div class="empty-state">No detections</div>'
+                    : dets.map(det => `
+                        <div class="det-row">
+                            <span class="det-class">${det.class}</span>
+                            <span class="det-score">${det.score.toFixed(2)}</span>
+                            <span class="det-bbox">[${det.bbox.join(', ')}]</span>
+                        </div>`).join('');
             }
 
             // Sync manual badge + button label

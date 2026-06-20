@@ -31,6 +31,7 @@ from tasks.project.packages.road_graph import Cardinal, Intersection
 from tasks.project.packages import intersection_detector as det_mod
 from servers.project.visualization import create_project_visualization
 from servers.visual_lane_servoing.visualization import create_lane_visualization
+from servers.object_detection.visualization import draw_detections
 from servers.templates.project import PROJECT_TEMPLATE as HTML_TEMPLATE
 
 from duckiebot.wheel_driver.godot_wheels_driver import GodotWheelsDriver
@@ -125,10 +126,17 @@ def visualize(frame_rgb):
 
     if not manual_mode and running:
         agent.tick(frame_bgr, wheels, leds, stop_event)
+    elif agent._detector is not None and agent._detector.model_loaded:
+        result = agent._detector.detect(frame_rgb)
+        if result is not None:
+            agent._last_detections = result
 
     debug_info  = agent.get_debug_info()
     stop_vis    = agent._stop_line.debug_frame(frame_bgr)
     mask_u8     = agent._stop_line.last_mask_red
+
+    if agent._detector is not None and agent._detector.model_loaded and agent._last_detections:
+        draw_detections(stop_vis, agent._last_detections)
 
     return create_project_visualization(frame_bgr, debug_info, stop_vis, mask_u8)
 
@@ -179,6 +187,13 @@ def status():
             'base_speed': agent._lane.base_speed,
         },
         'nav_config': agent._nav_cfg,
+        'stopped_by_detection': info.get('stopped_by_detection', False),
+        'stop_reason':          info.get('stop_reason', ''),
+        'model_loaded':         info.get('model_loaded', False),
+        'load_error':           info.get('load_error'),
+        'trt_building':         info.get('trt_building', False),
+        'conf_threshold':       info.get('conf_threshold', 0.5),
+        'detections':           info.get('detection_list', []),
     })
 
 
@@ -397,6 +412,34 @@ def reset_route():
     if agent:
         agent.reset_route()
     return jsonify({'status': 'ok'})
+
+
+@app.route('/remove_objects', methods=['POST'])
+def remove_objects():
+    data = request.json or {}
+    name_filter = data.get('filter', '')
+    bbox = data.get('bbox')
+
+    if bbox is None and agent:
+        bbox = agent.obstacle_removal_bbox()
+
+    if wheels and bbox is not None:
+        wheels.remove_objects(bbox=bbox)
+    elif wheels and name_filter:
+        wheels.remove_objects(name_filter=name_filter)
+
+    if agent:
+        agent.clear_obstacle()
+    return jsonify({'status': 'ok', 'filter': name_filter, 'bbox': bbox})
+
+
+@app.route('/set_threshold', methods=['POST'])
+def set_threshold():
+    value = request.json.get('value') if request.json else None
+    if agent and agent._detector and value is not None:
+        agent._detector.conf_threshold = float(value)
+    conf = agent._detector.conf_threshold if agent and agent._detector else None
+    return jsonify({'conf_threshold': conf})
 
 
 def _parse_approach(raw) -> Optional[Cardinal]:

@@ -127,7 +127,7 @@ _CONTENT = '''
             {% if virtual %}
             <div class="card">
                 <div class="card-header">Scene Objects</div>
-                <button onclick="removeObjects('duckie')" class="button" style="width:100%;background:#555">Remove Duck &amp; Continue</button>
+                <button onclick="removeObjects()" class="button" style="width:100%;background:#555">Remove Duck &amp; Continue</button>
             </div>
             <div class="card">
                 <div class="card-header">Map</div>
@@ -181,8 +181,8 @@ _EXTRA_JS = '''
         postJSON('/stop', {}).then(() => setRunningUI(false));
     }
 
-    function removeObjects(filter) {
-        postJSON('/remove_objects', {filter: filter});
+    function removeObjects() {
+        postJSON('/remove_objects', {});
     }
 
     function resetPosition() {
